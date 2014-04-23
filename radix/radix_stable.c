@@ -1,3 +1,5 @@
+//gcc radix.c -o radix -lrt -fopenmp
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -21,6 +23,7 @@ unsigned long int SIZE = 1 << 15;
 #ifdef OMP
 #include <omp.h>
 #endif
+
 #ifdef OMP
 #define NUM_THREADS 8
 #else
