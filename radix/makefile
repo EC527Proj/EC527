@@ -1,2 +1,2 @@
 all:
-	gcc -O1 -fopenmp radix.c -o radix -lrt -fopenmp
+	gcc -O1 radix.c -o radix -lrt -fopenmp

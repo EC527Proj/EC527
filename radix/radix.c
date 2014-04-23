@@ -10,7 +10,10 @@
 //#define MAXCORES SIZE/2
 #define MAXCORES 512
 #define OUTERSIZE 1
-unsigned long int SIZE = 1 << 15;
+unsigned long int SIZE = 1 << 20;
+//unsigned long int SIZE = 1048576; //2^20
+//unsigned long int SIZE = 524288;
+//unsigned long int SIZE = 262144;
 
 #define GIG 1000000000
 
@@ -29,14 +32,17 @@ unsigned long int SIZE = 1 << 15;
 
 #define NUM_RUNS 1
 
-#define BASE 2
+#define BASE 1024
+#define LOG_BASE log(BASE)/log(2)
 
+//Function prototypes
 void radixSort(int *in, int *out);
 void checkSorted(int *in);
-void bucketSort(int *in, int radix, int offset, int length, int  *buck[SIZE/NUM_THREADS], int *l1, int *l2);
+void bucketSort(int *in, int radix, int offset, int length, int **bucket, int *bucketLengths);
 void combineBuckets(int *in1, int *in2, int offset, int length);
 void printInt(int *in);
-struct timespec diff(struct timespec start, struct timespec end);
+struct timespec diff2(struct timespec start, struct timespec end);
+
 
 int main() {
 	printf("Start.\n");
@@ -44,146 +50,148 @@ int main() {
 	int i, j, k;
 #ifdef DYNAMIC
 	int *in;
-	int *out;
 #else
 	int in[SIZE];
-	int out[SIZE];
 #endif
 
 	int *tmp;
 
 	struct timespec time1, time2;
-  	struct timespec time_elapsed;
+  	struct timespec diff1;
   	float value;
-	printf("Pre allocate.\n");
-
+printf("Pre allocate.\n");
 #ifdef DYNAMIC
 	in = malloc(SIZE * sizeof(int));
-	out = malloc(SIZE * sizeof(int));
 #endif
-
 	srand(SEED);
+
+	
+
+
+	printf("start count.\n");
+	float tmpValue;
+//First two 8s to initialize stuff better.
+//long int SIZES[] = {SIZE};
+//First few values to even stuff out
+long int SIZES[] = {8,8,8,8,1<<18,1<<18,1<<18};//,16777216,33554432,67108864,134217728,268435456,536870912};
+for (k=0; k<(sizeof(SIZES)/sizeof(long int)); k++) {
 
 	for (i=0; i<SIZE; i++) {
 		in[i]=random() % MAXVAL;//MAXVAL;
 	}
 
-	for (i=0; i<MAXVAL; i++) {
-		out[i] = 0;
+	SIZE=SIZES[k];
+	
+	for (i=0; i<NUM_RUNS; i++) {
+		omp_set_num_threads(NUM_THREADS);
+		clock_gettime(CLOCK_REALTIME, &time1);
+		radixSort(in,in);
+		clock_gettime(CLOCK_REALTIME, &time2);
+		diff1 = diff2(time1,time2);
+		tmpValue = (double)(GIG * diff1.tv_sec + diff1.tv_nsec);
+		//Reset out
+
+		value += tmpValue;
+		//reset out
 	}
-
-	printf("start count.\n");
-	float tmpValue;
-	//First two 8s to initialize stuff better.
-	//long int SIZES[] = {SIZE};
-	//First few values to even stuff out
-	//long int SIZES[] = {8,8,8,8,2097152,4194304,8388608,16777216,33554432,67108864,134217728,268435456,536870912};
-	//for (k=0; k<(sizeof(SIZES)/sizeof(long int)); k++) {
-		//SIZE=SIZES[k];
-		for (i=0; i<NUM_RUNS; i++) {
-
-			omp_set_num_threads(NUM_THREADS);
-			clock_gettime(CLOCK_REALTIME, &time1);
-			radixSort(in, out);
-
-			clock_gettime(CLOCK_REALTIME, &time2);
-			time_elapsed = diff(time1,time2);
-			tmpValue = (double)(GIG * time_elapsed.tv_sec + time_elapsed.tv_nsec);
-			//Reset out
-
-	//		for (j=0; j<MAXVAL; j++) {
-	//			out[j] = 0;
-	//		}
-
-	//		printf("time %d: %.4f\n",i,tmpValue);
-			value += tmpValue;
-			//reset out
-		}
-		value /= NUM_RUNS;
-	    //Put in ms.
-	    value /= 1000000;
-		printf("%ld\t%.4f ms\n", SIZE, value);
-		value=0;
-	//}
+	value /= NUM_RUNS;
+    //Put in ms.
+    value /= 1000000;
+	printf("%ld\t%.4f\n",SIZES[k],value);
+	value=0;
+}
 
 //	printf("out: ");
 //	printInt(out);
-	checkSorted(out);
+	checkSorted(in);
 
 #ifdef DYNAMIC
 	free(in);
-	free(out);
 #endif
 	return 0;
 }
 
 void radixSort(int *in, int *out) {
-	int i;
+
+	int i, j;
 	int radix;
-	//int *buck0[NUM_THREADS];
-	//int *buck1[NUM_THREADS];
-	int *buck[2][NUM_THREADS/SIZE];
-
-	for (i=0; i<NUM_THREADS; i++) {
-		//buck0[i] = malloc(SIZE * sizeof(int));
-		//buck1[i] = malloc(SIZE * sizeof(int));
-		buck[i][0] = malloc(SIZE * sizeof(int));
-		buck[i][1] = malloc(SIZE * sizeof(int));
-	}
-
-	int l1[NUM_THREADS][1], l2[NUM_THREADS][1];
+	int ***buck; //[NUM_THREADS][BASE][SIZE/NUM_THREADS]
+	int bucketLengths[NUM_THREADS][BASE];
 	int runLength = SIZE / NUM_THREADS;
 
+	buck = (int***)malloc(NUM_THREADS * sizeof(int**));
+	for (i = 0; i < NUM_THREADS; i++) {
+		buck[i] = (int**) malloc(BASE * sizeof(int *));
+		for (j = 0; j < BASE; j++) {
+			buck[i][j] = (double *) malloc( (SIZE/NUM_THREADS) * sizeof(double));
+		}
+	}
+
+
+	for (i = 0; i < NUM_THREADS; i++) {
+		for (j = 0; j < BASE; j++) {
+			buck[i][j] = malloc(SIZE/NUM_THREADS * sizeof(int));
+		}
+	}
+	
+	//buck = malloc(NUM_THREADS * BASE * (SIZE/NUM_THREADS) * sizeof(int));
+
+
 	for (radix=0; radix<5; radix++) {
+
+		for (i = 0; i < NUM_THREADS; i++) {
+			for (j = 0; j < BASE; j++)
+			bucketLengths[i][j] = 0;
+		}
+
 #ifdef OMP
 #pragma omp parallel for
 #endif
-		for (i=0; i<NUM_THREADS; i++) {
-			//bucketSort(in, radix, i*runLength, runLength, buck[i], buck0[i], buck1[i], l1[i], l2[i]);
-			bucketSort(in, radix, i*runLength, runLength, buck[i], l1[i], l2[i]);
+		for (i = 0; i < NUM_THREADS; i++) {
+			bucketSort(in, radix, i*runLength, runLength, buck[i], bucketLengths[i]);
 		}
 
 		int inputOffset = i*runLength;
 		int sum=0;
+		
 
-		for (i=0; i<NUM_THREADS; i++) {
-			combineBuckets(in, buck[i][0], sum, *l1[i]);
-			sum += *l1[i];
+
+		for (j = 0; j < BASE; j++) {
+			for (i = 0; i < NUM_THREADS; i++) {
+				combineBuckets(in, buck[i][j], sum, bucketLengths[i][j]);
+				sum += bucketLengths[i][j];
+			}
 		}
 
-		for (i=0; i<NUM_THREADS; i++) {
-			combineBuckets(in, buck[i][1], sum, *l2[i]);
-			sum += *l2[i];
-		}
 	}
-	
 
-	for (i=0; i<NUM_THREADS; i++) {
-		//free(buck0[i]);
-		//free(buck1[i]);
-		free(buck[i][0]);
-		free(buck[i][1]);
+	for (i=0; i<SIZE; i++) {
+		out[i]=in[i];
 	}
+
+	for (i = 0; i < NUM_THREADS; i++) {
+		for (j = 0; j < BASE; j++) {
+			free(buck[i][j]);
+		}
+		free(buck[i]);
+	}
+	free(buck);
+
 }
 
 
-void bucketSort(int *in, int radix, int offset, int length, int *buck[SIZE/NUM_THREADS], int *l1, int *l2) {
-	int i=0;
-	int counter0 = 0;
-	int counter1 = 0;
-	int maskVal = 1 << radix;
+void bucketSort(int *in, int radix, int offset, int length, int **bucket, int *bucketLengths) {
+	int i = 0, buckNum;
 
-	for (i=offset; i<length+offset; i++) {
-		if (in[i] & maskVal) {
-			buck[1][counter1] = in[i];
-			counter1++;
-		} else if (!(in[i] & maskVal)) {
-			buck[0][counter0] = in[i];
-			counter0++;
-		}
+	int maskVal = BASE - 1;
+	int shift = radix * LOG_BASE;
+
+	for (i = offset; i < length + offset; i++) {
+		buckNum = ((in[i] >> shift) & maskVal);
+		bucket[buckNum][bucketLengths[buckNum]] = in[i];
+		bucketLengths[buckNum]++;
+
 	}
-	l1[0] = counter0;
-	l2[0] = counter1;
 }
 
 void combineBuckets(int *in1, int *in2, int offset, int length) {
@@ -191,6 +199,7 @@ void combineBuckets(int *in1, int *in2, int offset, int length) {
 	for (i=0; i<length; i++)
 		in1[offset+i] = in2[i];
 }
+
 
 
 void printInt(int *in) {
@@ -215,7 +224,7 @@ void checkSorted(int *in) {
 	return;
 }
 
-struct timespec diff(struct timespec start, struct timespec end) {
+struct timespec diff2(struct timespec start, struct timespec end) {
   struct timespec temp;
   if ((end.tv_nsec-start.tv_nsec)<0) {
     temp.tv_sec = end.tv_sec-start.tv_sec-1;
