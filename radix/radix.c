@@ -10,7 +10,7 @@
 //#define MAXCORES SIZE/2
 #define MAXCORES 512
 #define OUTERSIZE 1
-unsigned long int SIZE = 1 << 20;
+unsigned long int SIZE = 1 << 24;
 //unsigned long int SIZE = 1048576; //2^20
 //unsigned long int SIZE = 524288;
 //unsigned long int SIZE = 262144;
@@ -41,7 +41,7 @@ void checkSorted(int *in);
 void bucketSort(int *in, int radix, int offset, int length, int **bucket, int *bucketLengths);
 void combineBuckets(int *in1, int *in2, int offset, int length);
 void printInt(int *in);
-struct timespec diff2(struct timespec start, struct timespec end);
+struct timespec diff(struct timespec start, struct timespec end);
 
 
 int main() {
@@ -59,50 +59,50 @@ int main() {
 	struct timespec time1, time2;
   	struct timespec diff1;
   	float value;
-printf("Pre allocate.\n");
+	printf("Pre allocate.\n");
 #ifdef DYNAMIC
 	in = malloc(SIZE * sizeof(int));
 #endif
 	srand(SEED);
 
-	
-
-
 	printf("start count.\n");
+
+	printf("\nNumber of Threads: %d\n", NUM_THREADS);
+	printf("Base: %d\n\n", BASE);
+
 	float tmpValue;
-//First two 8s to initialize stuff better.
-//long int SIZES[] = {SIZE};
-//First few values to even stuff out
-long int SIZES[] = {8,8,8,8,1<<18,1<<18,1<<18};//,16777216,33554432,67108864,134217728,268435456,536870912};
-for (k=0; k<(sizeof(SIZES)/sizeof(long int)); k++) {
+	//First two 8s to initialize better.
+	//First few values to even it out
+	long int SIZES[] = {8, 8, 8, 8, 1<<10, 1<<10, 1<<10, 1<<10, 1<<18, 1<<18, 1<<18};//,16777216,33554432,67108864,134217728,268435456,536870912};
+	for (k=0; k<(sizeof(SIZES)/sizeof(long int)); k++) {
 
-	for (i=0; i<SIZE; i++) {
-		in[i]=random() % MAXVAL;//MAXVAL;
+		for (i=0; i<SIZE; i++) {
+			in[i]=random() % MAXVAL;//MAXVAL;
+		}
+
+		SIZE=SIZES[k];
+
+		for (i=0; i<NUM_RUNS; i++) {
+			omp_set_num_threads(NUM_THREADS);
+			clock_gettime(CLOCK_REALTIME, &time1);
+			radixSort(in,in);
+			clock_gettime(CLOCK_REALTIME, &time2);
+			diff1 = diff(time1,time2);
+			tmpValue = (double)(GIG * diff1.tv_sec + diff1.tv_nsec);
+			//Reset out
+
+			value += tmpValue;
+			//reset out
+		}
+		value /= NUM_RUNS;
+	    //Put in ms.
+	    value /= 1000000;
+		printf("%ld\t%.4f\n",SIZES[k],value);
+		value=0;
 	}
 
-	SIZE=SIZES[k];
-	
-	for (i=0; i<NUM_RUNS; i++) {
-		omp_set_num_threads(NUM_THREADS);
-		clock_gettime(CLOCK_REALTIME, &time1);
-		radixSort(in,in);
-		clock_gettime(CLOCK_REALTIME, &time2);
-		diff1 = diff2(time1,time2);
-		tmpValue = (double)(GIG * diff1.tv_sec + diff1.tv_nsec);
-		//Reset out
-
-		value += tmpValue;
-		//reset out
-	}
-	value /= NUM_RUNS;
-    //Put in ms.
-    value /= 1000000;
-	printf("%ld\t%.4f\n",SIZES[k],value);
-	value=0;
-}
-
-//	printf("out: ");
-//	printInt(out);
+	//	printf("out: ");
+	//	printInt(out);
 	checkSorted(in);
 
 #ifdef DYNAMIC
@@ -123,18 +123,10 @@ void radixSort(int *in, int *out) {
 	for (i = 0; i < NUM_THREADS; i++) {
 		buck[i] = (int**) malloc(BASE * sizeof(int *));
 		for (j = 0; j < BASE; j++) {
-			buck[i][j] = (double *) malloc( (SIZE/NUM_THREADS) * sizeof(double));
+			buck[i][j] = (int *) malloc( (SIZE/NUM_THREADS) * sizeof(int));
 		}
 	}
 
-
-	for (i = 0; i < NUM_THREADS; i++) {
-		for (j = 0; j < BASE; j++) {
-			buck[i][j] = malloc(SIZE/NUM_THREADS * sizeof(int));
-		}
-	}
-	
-	//buck = malloc(NUM_THREADS * BASE * (SIZE/NUM_THREADS) * sizeof(int));
 
 
 	for (radix=0; radix<5; radix++) {
@@ -224,14 +216,15 @@ void checkSorted(int *in) {
 	return;
 }
 
-struct timespec diff2(struct timespec start, struct timespec end) {
-  struct timespec temp;
-  if ((end.tv_nsec-start.tv_nsec)<0) {
-    temp.tv_sec = end.tv_sec-start.tv_sec-1;
-    temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
-  } else {
-    temp.tv_sec = end.tv_sec-start.tv_sec;
-    temp.tv_nsec = end.tv_nsec-start.tv_nsec;
-  }
-  return temp;
+struct timespec diff(struct timespec start, struct timespec end) {
+	struct timespec temp;
+	if ((end.tv_nsec-start.tv_nsec)<0) {
+		temp.tv_sec = end.tv_sec-start.tv_sec-1;
+		temp.tv_nsec = 1000000000+end.tv_nsec-start.tv_nsec;
+	} 
+	else {
+		temp.tv_sec = end.tv_sec-start.tv_sec;
+		temp.tv_nsec = end.tv_nsec-start.tv_nsec;
+	}
+	return temp;
 }
