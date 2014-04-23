@@ -29,26 +29,25 @@ unsigned long int SIZE = 1 << 15;
 
 #define NUM_RUNS 1
 
-//This is the base, in terms of 2^(BASE-1), so BASE 2 means 2^(BASE-1), or base 2. BASE 3 would mean 2^(BASE-1) or 4
 #define BASE 2
-#define POW2 2
+
 
 void printInt(int *in);
 struct timespec diff2(struct timespec start, struct timespec end);
 
 void checkSorted(int *in);
-void bucketSort(int *in, int radix, int offset, int length, int bucket[POW2][SIZE], int *l1, int *l2);
+void bucketSort(int *in, int radix, int offset, int length, int bucket0[SIZE], int bucket1[SIZE], int *l1, int *l2);
 void combineBuckets(int *in1, int *in2, int offset, int length);
 
 
 void radixSort(int *in, int *out) {
 	int i;
 	int radix;
-	int *buck[NUM_THREADS];
-//	int *buck1[NUM_THREADS];
+	int *buck0[NUM_THREADS];
+	int *buck1[NUM_THREADS];
 	for (i=0; i<NUM_THREADS; i++) {
-		buck[0][i] = malloc(SIZE * sizeof(int));
-		buck[1][i] = malloc(SIZE * sizeof(int));
+		buck0[i] = malloc(SIZE * sizeof(int));
+		buck1[i] = malloc(SIZE * sizeof(int));
 	}
 	int l1[NUM_THREADS][1], l2[NUM_THREADS][1];
 	int runLength = SIZE / NUM_THREADS;
@@ -57,17 +56,17 @@ void radixSort(int *in, int *out) {
 #pragma omp parallel for
 #endif
 		for (i=0; i<NUM_THREADS; i++) {
-			bucketSort(in,radix,i*runLength,runLength,l1[i],l2[i]);
+			bucketSort(in,radix,i*runLength,runLength,buck0[i],buck1[i],l1[i],l2[i]);
 		}
 	int inputOffset = i*runLength;
 		int sum=0;
 		for (i=0; i<NUM_THREADS; i++) {
-			combineBuckets(in, buck[0][i], sum, *l1[i]);
+			combineBuckets(in, buck0[i], sum, *l1[i]);
 			sum += *l1[i];
 		}
 
 		for (i=0; i<NUM_THREADS; i++) {
-			combineBuckets(in, buck[1][i], sum, *l2[i]);
+			combineBuckets(in, buck1[i], sum, *l2[i]);
 			sum += *l2[i];
 		}
 	}
@@ -75,23 +74,23 @@ void radixSort(int *in, int *out) {
 		out[i]=in[i];
 	}
 	for (i=0; i<NUM_THREADS; i++) {
-		free(buck[0][i]);
-		free(buck[1][i]);
+		free(buck0[i]);
+		free(buck1[i]);
 	}
 }
 
 
-void bucketSort(int *in, int radix, int offset, int length, int bucket[POW2][SIZE], int *l1, int *l2) {
+void bucketSort(int *in, int radix, int offset, int length, int bucket0[SIZE], int bucket1[SIZE], int *l1, int *l2) {
 	int i=0;
 	int counter0 = 0;
 	int counter1 = 0;
 	int maskVal = 1 << radix;
 	for (i=offset; i<length+offset; i++) {
 		if (in[i] & maskVal) {
-			bucket[0][counter1] = in[i];
+			bucket1[counter1] = in[i];
 			counter1++;
 		} else if (!(in[i] & maskVal)) {
-			bucket[1][counter0] = in[i];
+			bucket0[counter0] = in[i];
 			counter0++;
 		}
 	}
